@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Description</key>
+    <string>Downloads the latest Microsoft Edge pkg,
+and appends the version to the end of the filename.
+
+CHANNEL supports 'Production', 'InsiderSlow' and 'InsiderFast', which map
+to the Edge Enterprise API's Stable, Beta and Dev channels. Custom UUID
+channels are not supported for Edge.
+
+VERSION supports one value: 'latest', which will download
+the latest full update for the given CHANNEL.
+</string>
+    <key>Identifier</key>
+    <string>com.github.autopkg.download.MSEdge</string>
+    <key>MinimumVersion</key>
+    <string>1.4</string>
+    <key>Input</key>
+    <dict>
+        <key>CHANNEL</key>
+        <string>Production</string>
+        <key>NAME</key>
+        <string>MSEdge</string>
+        <key>PRODUCT</key>
+        <string>Edge</string>
+        <key>VERSION</key>
+        <string>latest</string>
+    </dict>
+    <key>ParentRecipe</key>
+    <string>com.github.autopkg.download.MSOfficeMacProduct</string>
+</dict>
+</plist>

@@ -39,12 +39,26 @@ for DIR in "$CMD_TOOL_DIR" "$CMD_MAN_DIR"; do
     [ -d "$DIR" ] || mkdir -p -m 775 "$DIR"
 done
 # make symlinks to binaries and manpages
-for TOOL in bbdiff bbfind; do
+for TOOL in bbdiff bbfind bbresults; do
     "$LN" -sf "$HELPER_BIN_SRC_DIR/$TOOL" "$CMD_TOOL_DIR/$TOOL"
     "$LN" -sf "$HELPER_MAN_SRC_DIR/$TOOL.1" "$CMD_MAN_DIR/$TOOL.1"
 done
 "$LN" -sf "$HELPER_BIN_SRC_DIR/bbedit_tool" "$CMD_TOOL_DIR/bbedit"
 "$LN" -sf "$HELPER_MAN_SRC_DIR/bbedit.1" "$CMD_MAN_DIR/bbedit.1"
+            </string>
+            <key>postuninstall_script</key>
+            <string>#!/bin/sh
+# Delete BBEdit command-line tool resources if they exist
+
+CMD_TOOL_DIR=/usr/local/bin
+CMD_MAN_DIR=/usr/local/share/man/man1
+RM=/bin/rm
+
+# Delete symlinks to binaries and man pages
+for TOOL in bbdiff bbfind bbresults bbedit; do
+	[ -e "$CMD_TOOL_DIR/$TOOL" ] &amp;&amp; "$RM" "$CMD_TOOL_DIR/$TOOL"
+	[ -e "$CMD_MAN_DIR/$TOOL.1" ] &amp;&amp; "$RM" "$CMD_MAN_DIR/$TOOL.1"
+done
             </string>
             <key>unattended_install</key>
             <true/>

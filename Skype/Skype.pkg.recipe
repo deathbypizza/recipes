@@ -1,92 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-    <key>Description</key>
-    <string>Downloads latest Skype disk image and builds a package.</string>
-    <key>Identifier</key>
-    <string>com.github.autopkg.pkg.Skype</string>
-    <key>Input</key>
     <dict>
-        <key>NAME</key>
-        <string>Skype</string>
-    </dict>
-    <key>MinimumVersion</key>
-    <string>0.6.0</string>
-    <key>ParentRecipe</key>
-    <string>com.github.autopkg.download.Skype</string>
-    <key>Process</key>
-    <array>
+        <key>Description</key>
+        <string>Downloads latest Skype disk image and builds a package.</string>
+        <key>Identifier</key>
+        <string>com.github.autopkg.pkg.Skype</string>
+        <key>Input</key>
         <dict>
-            <key>Arguments</key>
+            <key>NAME</key>
+            <string>Skype</string>
+            <key>VERSIONTYPE</key>
+            <string>CFBundleVersion</string>
+        </dict>
+        <key>MinimumVersion</key>
+        <string>1.1</string>
+        <key>ParentRecipe</key>
+        <string>com.github.autopkg.download.Skype</string>
+        <key>Process</key>
+        <array>
             <dict>
-                <key>info_path</key>
-                <string>%pathname%/Skype.app/Contents/Info.plist</string>
-                <key>plist_keys</key>
+                <key>Processor</key>
+                <string>DeprecationWarning</string>
+                <key>Arguments</key>
                 <dict>
-                    <key>CFBundleVersion</key>
-                    <string>version</string>
-                    <key>CFBundleIdentifier</key>
-                    <string>bundleid</string>
+                    <key>warning_message</key>
+                    <string>This recipe has been deprecated. As of May 2025, Microsoft has discontinued Skype. Please remove this recipe from your runs.
+
+For more details, see https://support.microsoft.com/en-us/skype/skype-is-retiring-in-may-2025-what-you-need-to-know-2a7d2501-427f-485e-8be0-2068a9f90472</string>
                 </dict>
             </dict>
-            <key>Processor</key>
-            <string>PlistReader</string>
-        </dict>
-        <dict>
-            <key>Processor</key>
-            <string>PkgRootCreator</string>
-            <key>Arguments</key>
             <dict>
-                <key>pkgroot</key>
-                <string>%RECIPE_CACHE_DIR%/%NAME%</string>
-                <key>pkgdirs</key>
+                <key>Arguments</key>
                 <dict>
-                    <key>Applications</key>
-                    <string>0775</string>
+                    <key>input_plist_path</key>
+                    <string>%pathname%/Skype.app/Contents/Info.plist</string>
+                    <key>plist_version_key</key>
+                    <string>%VERSIONTYPE%</string>
                 </dict>
+                <key>Processor</key>
+                <string>Versioner</string>
             </dict>
-        </dict>
-        <dict>
-            <key>Processor</key>
-            <string>Copier</string>
-            <key>Arguments</key>
             <dict>
-                <key>source_path</key>
-                <string>%pathname%/Skype.app</string>
-                <key>destination_path</key>
-                <string>%pkgroot%/Applications/Skype.app</string>
-            </dict>
-        </dict>
-        <dict>
-            <key>Processor</key>
-            <string>PkgCreator</string>
-            <key>Arguments</key>
-            <dict>
-                <key>pkg_request</key>
+                <key>Processor</key>
+                <string>AppPkgCreator</string>
+                <key>Arguments</key>
                 <dict>
                     <key>pkgname</key>
                     <string>%NAME%-%version%</string>
-                    <key>version</key>
-                    <string>%version%</string>
-                    <key>id</key>
-                    <string>%bundleid%</string>
-                     <key>options</key>
-                    <string>purge_ds_store</string>
-                    <key>chown</key>
-                    <array>
-                        <dict>
-                            <key>path</key>
-                            <string>Applications</string>
-                            <key>user</key>
-                            <string>root</string>
-                            <key>group</key>
-                            <string>admin</string>
-                        </dict>
-                    </array>
                 </dict>
             </dict>
-        </dict>
-    </array>
-</dict>
+        </array>
+    </dict>
 </plist>

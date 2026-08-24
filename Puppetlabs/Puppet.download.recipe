@@ -20,9 +20,18 @@ the default, 'latest'.</string>
         <string>latest</string>
     </dict>
     <key>MinimumVersion</key>
-    <string>0.6.1</string>
+    <string>1.4</string>
     <key>Process</key>
     <array>
+        <dict>
+            <key>Processor</key>
+            <string>DeprecationWarning</string>
+            <key>Arguments</key>
+            <dict>
+                <key>warning_message</key>
+                <string>Please consider the more up-to-date Puppet recipes available in the grahamgilbert-recipes, gerardkok-recipes, or arubdesu-recipes repos.</string>
+            </dict>
+        </dict>
         <dict>
             <key>Arguments</key>
             <dict>

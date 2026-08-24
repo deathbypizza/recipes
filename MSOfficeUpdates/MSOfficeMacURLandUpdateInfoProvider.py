@@ -1,0 +1,558 @@
+#!/usr/local/autopkg/python
+#
+# Copyright 2015 Allister Banks and Tim Sutton,
+# based on MSOffice2011UpdateInfoProvider by Greg Neagle
+# much Office 2019 update work done by Carl Ashley
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""See docstring for MSOfficeMacURLandUpdateInfoProvider class"""
+
+import json
+import plistlib
+import re
+
+from autopkglib import APLooseVersion, ProcessorError, version_equal_or_greater
+from autopkglib.URLGetter import URLGetter
+
+__all__ = ["MSOfficeMacURLandUpdateInfoProvider"]
+
+# CULTURE_CODE defaulting to 'en-US' as the installers and updates seem to be
+# multilingual.
+CULTURE_CODE = "0409"
+BASE_URL = (
+    "https://res.public.onecdn.static.microsoft/mro1cdnstorage/%s/MacAutoupdate/%s.xml"
+)
+EDGE_ENTERPRISE_API_URL = (
+    "https://edgeupdates.microsoft.com/api/products?view=enterprise"
+)
+EDGE_ENTERPRISE_CHANNELS = {
+    "Production": {
+        "channel": "Stable",
+        "bundle_id": "com.microsoft.edgemac",
+        "path": "/Applications/Microsoft Edge.app",
+    },
+    "InsiderSlow": {
+        "channel": "Beta",
+        "bundle_id": "com.microsoft.edgemac.Beta",
+        "path": "/Applications/Microsoft Edge Beta.app",
+    },
+    "InsiderFast": {
+        "channel": "Dev",
+        "bundle_id": "com.microsoft.edgemac.Dev",
+        "path": "/Applications/Microsoft Edge Dev.app",
+    },
+}
+
+# These can be easily be found as "Application ID" in
+# ~/Library/Preferences/com.microsoft.autoupdate2.plist on a
+# machine that has Microsoft AutoUpdate.app installed on it.
+#
+# Note that Skype, 'MSFB' has a '16' after it,
+# AutoUpdate has a '03' or '04' after it,
+# other Office 2016 products have '15'; Office 2019/365 prodects end with 2019
+
+PROD_DICT = {
+    "Excel2016": {"id": "XCEL15", "path": "/Applications/Microsoft Excel.app"},
+    "Excel2019": {
+        "bundle_id": "com.microsoft.Excel",
+        "id": "XCEL2019",
+        "path": "/Applications/Microsoft Excel.app",
+        "minimum_os": "10.12",
+        "minimum_update_version": "16.17",
+    },
+    "OneNote2016": {"id": "ONMC15", "path": "/Applications/Microsoft OneNote.app"},
+    "OneNote2019": {
+        "bundle_id": "com.microsoft.onenote.mac",
+        "id": "ONMC2019",
+        "path": "/Applications/Microsoft OneNote.app",
+        "minimum_os": "10.12",
+        "minimum_update_version": "16.17",
+    },
+    "Outlook2016": {"id": "OPIM15", "path": "/Applications/Microsoft Outlook.app"},
+    "Outlook2019": {
+        "bundle_id": "com.microsoft.Outlook",
+        "id": "OPIM2019",
+        "path": "/Applications/Microsoft Outlook.app",
+        "minimum_os": "10.12",
+        "minimum_update_version": "16.17",
+    },
+    "PowerPoint2016": {
+        "id": "PPT315",
+        "path": "/Applications/Microsoft PowerPoint.app",
+    },
+    "PowerPoint2019": {
+        "bundle_id": "com.microsoft.PowerPoint",
+        "id": "PPT32019",
+        "path": "/Applications/Microsoft PowerPoint.app",
+        "minimum_os": "10.12",
+        "minimum_update_version": "16.17",
+    },
+    "Word2016": {"id": "MSWD15", "path": "/Applications/Microsoft Word.app"},
+    "Word2019": {
+        "bundle_id": "com.microsoft.Word",
+        "id": "MSWD2019",
+        "path": "/Applications/Microsoft Word.app",
+        "minimum_os": "10.12",
+        "minimum_update_version": "16.17",
+    },
+    "SkypeForBusiness": {
+        "id": "MSFB16",
+        "path": "/Applications/Skype for Business.app",
+    },
+    "AutoUpdate03": {
+        "id": "MSau03",
+        "path": (
+            "/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app"
+        ),
+    },
+    "AutoUpdate04": {
+        "id": "MSau04",
+        "path": (
+            "/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app"
+        ),
+    },
+    "DefenderATP": {
+        "id": "WDAV00",
+        "path": "/Applications/Microsoft Defender ATP.app",
+        "minimum_os": "10.12",
+    },
+    "Edge": {
+        "id": "EDGE01",
+        "path": "/Applications/Microsoft Edge.app",
+        "minimum_os": "10.11",
+    },
+    "Teams": {
+        "id": "TEAMS10",
+        "path": "/Applications/Microsoft Teams classic.app",
+        "minimum_os": "10.11",
+    },
+    "Teams2": {
+        "id": "TEAMS21",
+        "path": "/Applications/Microsoft Teams.app",
+        "minimum_os": "12.0",
+    },
+    "CompanyPortal": {
+        "id": "IMCP01",
+        "path": "/Applications/Company Portal.app",
+        "minimum_os": "10.15",
+    },
+    "OneDrive": {
+        "id": "ONDR18",
+        "path": "/Applications/OneDrive.app",
+        "minimum_os": "10.15",
+    },
+    "RemoteDesktop": {
+        "id": "MSRD10",
+        "path": "/Applications/Windows App.app",
+        "minimum_os": "12.0",
+    },
+}
+SUPPORTED_VERSIONS = ["latest", "latest-delta", "latest-standalone"]
+DEFAULT_VERSION = "latest"
+CHANNELS = {
+    "Production": "C1297A47-86C4-4C1F-97FA-950631F94777",
+    "InsiderSlow": "1ac37578-5a24-40fb-892e-b89d85b6dfaa",
+    "InsiderFast": "4B2D7701-0A4F-49C8-B4CB-0C2D4043F51F",
+}
+DEFAULT_CHANNEL = "Production"
+NO_TRIGGER_CONDITIONS = ["SkypeForBusiness", "Teams", "Teams2", "CompanyPortal"]
+# Office 2016 reached end of support in October 2020 at 16.16.27, and Microsoft
+# no longer publishes these products to the update feed.
+DEPRECATED_PRODUCTS = [
+    "Excel2016",
+    "OneNote2016",
+    "Outlook2016",
+    "PowerPoint2016",
+    "Word2016",
+]
+
+
+class MSOfficeMacURLandUpdateInfoProvider(URLGetter):
+    """Provides a download URL and update info for Microsoft Mac products, from
+    the Microsoft AutoUpdate manifest feed or, for Edge, the Edge Enterprise API."""
+
+    input_variables = {
+        "product": {
+            "required": True,
+            "description": "Name of product to fetch, e.g. Excel.",
+        },
+        "version": {
+            "required": False,
+            "default": DEFAULT_VERSION,
+            "description": (
+                "Update type to fetch. Supported values are: "
+                "'%s'. Defaults to %s. Edge supports only '%s'."
+                % ("', '".join(SUPPORTED_VERSIONS), DEFAULT_VERSION, DEFAULT_VERSION)
+            ),
+        },
+        "munki_required_update_name": {
+            "required": False,
+            "default": "",
+            "description": (
+                "If the update is a delta, a 'requires' key will be set "
+                "according to the minimum version defined in the MS "
+                "metadata. If this key is set, this name will be used "
+                "for the required item. If unset, NAME will be used."
+            ),
+        },
+        "channel": {
+            "required": False,
+            "default": DEFAULT_CHANNEL,
+            "description": (
+                "Update feed channel that will be checked for updates. "
+                "Defaults to %s, acceptable values are either a custom "
+                "UUID or one of: %s. Edge accepts only the named channels, "
+                "which map to the Edge Enterprise API's Stable, Beta and Dev."
+                % (DEFAULT_CHANNEL, ", ".join(CHANNELS))
+            ),
+        },
+    }
+    output_variables = {
+        "additional_pkginfo": {
+            "description": "Some pkginfo fields extracted from the Microsoft metadata."
+        },
+        "version": {
+            "description": (
+                "The version of the update as extracted from the Microsoft " "metadata."
+            )
+        },
+        "minimum_os_version": {
+            "description": (
+                "The minimum os version required by the update as extracted "
+                "from the Microsoft metadata."
+            )
+        },
+        "minimum_version_for_delta": {
+            "description": (
+                "If this update is a delta, this value will be set to the "
+                "minimum required application version to which this delta "
+                "can be applied. Otherwise it will be an empty string."
+            )
+        },
+        "url": {"description": "URL to the latest installer."},
+    }
+    description = __doc__
+    min_delta_version = ""
+
+    def sanity_check_expected_triggers(self, item):
+        """Raises an exeception if the Trigger Condition or
+        Triggers for an update don't match what we expect.
+        Protects us if these change in the future."""
+        # MS currently uses "Registered File" placeholders, which get replaced
+        # with the bundle of a given application ID. In other words, this is
+        # the bundle version of the app itself.
+        if not item.get("Trigger Condition") == ["and", "Registered File"]:
+            raise ProcessorError(
+                "Unexpected Trigger Condition in item %s: %s"
+                % (item["Title"], item["Trigger Condition"])
+            )
+
+    def get_installs_items(self, item):
+        """Attempts to parse the Triggers to create an installs item using
+        only manifest data, making the assumption that CFBundleVersion and
+        CFBundleShortVersionString are equal. Skip SkypeForBusiness, Teams,
+        and Edge as their xml does not contain a 'Trigger Condition'"""
+        if self.env["product"] not in NO_TRIGGER_CONDITIONS:
+            self.sanity_check_expected_triggers(item)
+        version = self.get_version(item)
+        # Skipping CFBundleShortVersionString because it doesn't contain
+        # anything more specific than major.minor (no build versions
+        # distinguishing Insider builds for example)
+        installs_item = {
+            "CFBundleVersion": version,
+            "path": PROD_DICT[self.env["product"]]["path"],
+            "type": "application",
+        }
+        return [installs_item]
+
+    def get_version(self, item):
+        """Extracts the version of the update item."""
+        # If the 'Update Version' key exists we pull the "full" version string
+        # easily from this
+        if item.get("Update Version"):
+            self.output(
+                "Extracting version %s from metadata 'Update Version' key"
+                % item["Update Version"]
+            )
+            return item["Update Version"]
+
+    def get_edge_installer_info(self):
+        """Gets Microsoft Edge installer info from the Edge Enterprise API."""
+        if self.env["version"] != "latest":
+            raise ProcessorError("Edge supports only VERSION 'latest'.")
+
+        channel_input = self.env.get("channel", DEFAULT_CHANNEL)
+        if channel_input not in EDGE_ENTERPRISE_CHANNELS:
+            raise ProcessorError(
+                "Edge CHANNEL must be one of: %s. Custom UUID channels are not "
+                "supported by the Edge Enterprise API."
+                % ", ".join(EDGE_ENTERPRISE_CHANNELS)
+            )
+        edge = EDGE_ENTERPRISE_CHANNELS[channel_input]
+        edge_channel = edge["channel"]
+
+        self.output("Requesting Edge Enterprise API: %s" % EDGE_ENTERPRISE_API_URL)
+        products = json.loads(self.download(EDGE_ENTERPRISE_API_URL))
+
+        product = next(
+            (
+                item
+                for item in products
+                if item.get("Product", "").lower() == edge_channel.lower()
+            ),
+            None,
+        )
+        if not product:
+            raise ProcessorError(
+                "Could not find Edge channel '%s' in Enterprise API response."
+                % edge_channel
+            )
+
+        releases = []
+        for release in product.get("Releases", []):
+            if (
+                release.get("Platform", "").lower() != "macos"
+                or release.get("Architecture", "").lower() != "universal"
+            ):
+                continue
+            artifact = next(
+                (
+                    item
+                    for item in release.get("Artifacts") or []
+                    if item.get("ArtifactName", "").lower() == "pkg"
+                    or item.get("Location", "").lower().endswith(".pkg")
+                ),
+                None,
+            )
+            if artifact and release.get("ProductVersion") and artifact.get("Location"):
+                releases.append((release, artifact))
+
+        if not releases:
+            raise ProcessorError(
+                "Could not find a macOS universal pkg release for Edge channel '%s'."
+                % edge_channel
+            )
+
+        release, artifact = max(
+            releases,
+            key=lambda item: APLooseVersion(item[0]["ProductVersion"]),
+        )
+        version = release["ProductVersion"]
+        self.env["version"] = version
+        self.env["minimum_version_for_delta"] = ""
+        self.env["url"] = artifact["Location"].strip()
+        self.env["additional_pkginfo"] = {
+            "installs": [
+                {
+                    "CFBundleIdentifier": edge["bundle_id"],
+                    "CFBundleShortVersionString": version,
+                    "path": edge["path"],
+                    "type": "application",
+                }
+            ],
+        }
+
+        self.output("Found Edge %s version %s" % (edge_channel, version))
+        self.output("Found URL %s" % self.env["url"])
+        self.output("Additional pkginfo: %s" % self.env["additional_pkginfo"])
+
+    def get_installer_info(self):
+        """Gets info about an installer from MS metadata."""
+        # Get the channel UUID, matching against a custom UUID if one is given
+        channel_input = self.env.get("channel", DEFAULT_CHANNEL)
+        rex = r"^([0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$"
+        match_uuid = re.match(rex, channel_input)
+        if not match_uuid and channel_input not in CHANNELS:
+            raise ProcessorError(
+                "'channel' input variable must be one of: %s or a custom "
+                "uuid" % (", ".join(CHANNELS))
+            )
+        if match_uuid:
+            channel = match_uuid.groups()[0]
+        else:
+            channel = CHANNELS[channel_input]
+        base_url = BASE_URL % (
+            channel,
+            CULTURE_CODE + PROD_DICT[self.env["product"]]["id"],
+        )
+
+        # Get metadata URL
+        self.output("Requesting xml: %s" % base_url)
+        # Add the MAU User-Agent, since MAU feed server seems to explicitly
+        # block a User-Agent of 'Python-urllib/2.7' - even a blank User-Agent
+        # string passes.
+        headers = {
+            "User-Agent": (
+                "Microsoft%20AutoUpdate/3.6.16080300 CFNetwork/"
+                "760.6.3 Darwin/15.6.0 (x86_64)"
+            )
+        }
+        data = self.download(base_url, headers)
+
+        metadata = plistlib.loads(data)
+        if not isinstance(metadata, list):
+            raise ProcessorError(
+                "No update metadata returned for product '%s' from %s. This "
+                "product may no longer be published to the update feed."
+                % (self.env["product"], base_url)
+            )
+        # Upstream feed has emitted Location values with stray newlines
+        # that break curl; normalize whitespace on all string values.
+        metadata = [
+            {k: v.strip() if isinstance(v, str) else v for k, v in entry.items()}
+            for entry in metadata
+            if isinstance(entry, dict)
+        ]
+        item = {}
+        # Update feeds for a given 'channel' will have either combo or delta
+        # pkg urls, with delta's additionally having a 'FullUpdaterLocation'
+        # key.
+        # We populate the item dict with the appropriate section of the metadata
+        # output
+        if (
+            self.env["version"] == "latest"
+            or self.env["version"] == "latest-standalone"
+        ):
+            item = [u for u in metadata if not u.get("FullUpdaterLocation")]
+        elif self.env["version"] == "latest-delta":
+            item = [u for u in metadata if u.get("FullUpdaterLocation")]
+        if not item:
+            raise ProcessorError(
+                "Could not find an applicable update in " "update metadata."
+            )
+
+        # this just returns the first item; in the case of delta updates this
+        # is not guaranteed to be the "latest" delta. Does anybody actually
+        # use this?
+        item = item[0]
+
+        if self.env["version"] == "latest-standalone":
+            # do string replacement on the pattern of the URL in the
+            # case of a Standalone app request.
+            url = item["Location"]
+            updater_suffix = "_Updater.pkg"
+            if url.endswith(updater_suffix):
+                item["Location"] = url[0 : -(len(updater_suffix))] + "_Installer.pkg"
+            else:
+                raise ProcessorError(
+                    "Updater URL in unexpected format; cannot "
+                    "determine standalone URL."
+                )
+
+        self.env["url"] = item["Location"]
+        self.output("Found URL %s" % self.env["url"])
+        self.output("Got update: '%s'" % item["Title"])
+        # now extract useful info from the rest of the metadata that could
+        # be used in a pkginfo
+        pkginfo = {}
+
+        # Minimum OS version key should exist!
+        pkginfo["minimum_os_version"] = (
+            item.get("Minimum OS")
+            or PROD_DICT[self.env["product"]].get("minimum_os")
+            or "10.10.5"
+        )
+
+        # Make sure that the minimum_os_version is at least higher than the pre defined value
+        if not version_equal_or_greater(
+            pkginfo["minimum_os_version"],
+            PROD_DICT[self.env["product"]].get("minimum_os", "10.10.5"),
+        ):
+            pkginfo["minimum_os_version"] = PROD_DICT[self.env["product"]].get(
+                "minimum_os", "10.10.5"
+            )
+
+        installs_items = self.get_installs_items(item)
+        if installs_items:
+            pkginfo["installs"] = installs_items
+
+        # If bundle_id is defined
+        if PROD_DICT[self.env["product"]].get("bundle_id"):
+            # Add to pkginfo
+            pkginfo["installs"][0]["CFBundleIdentifier"] = PROD_DICT[
+                self.env["product"]
+            ].get("bundle_id")
+
+        # Extra work to do if this is a delta updater
+        if self.env["version"] == "latest-delta":
+            try:
+                rel_versions = item["Triggers"]["Registered File"]["VersionsRelative"]
+            except KeyError:
+                raise ProcessorError(
+                    "Can't find expected VersionsRelative"
+                    "keys for determining minimum update "
+                    "required for delta update."
+                )
+            for expression in rel_versions:
+                operator, ver_eval = expression.split()
+                if operator == ">=":
+                    self.min_delta_version = ver_eval
+                    break
+            if not self.min_delta_version:
+                raise ProcessorError(
+                    "Not able to determine minimum required "
+                    "version for delta update."
+                )
+            # Put minimum_update_version into installs item
+            self.output("Adding minimum required version: %s" % self.min_delta_version)
+            pkginfo["installs"][0]["minimum_update_version"] = self.min_delta_version
+            required_update_name = self.env["NAME"]
+            if self.env["munki_required_update_name"]:
+                required_update_name = self.env["munki_required_update_name"]
+            # Add 'requires' array
+            pkginfo["requires"] = [
+                "%s-%s" % (required_update_name, self.min_delta_version)
+            ]
+        elif PROD_DICT[self.env["product"]].get("minimum_update_version"):
+            # Put minimum_update_version into installs item as it is specified in PROD_DICT
+            self.output(
+                "Adding minimum required version: %s"
+                % PROD_DICT[self.env["product"]].get("minimum_update_version")
+            )
+            pkginfo["installs"][0]["minimum_update_version"] = PROD_DICT[
+                self.env["product"]
+            ].get("minimum_update_version")
+
+        self.env["version"] = self.get_version(item)
+        self.env["minimum_os_version"] = pkginfo["minimum_os_version"]
+        self.env["minimum_version_for_delta"] = self.min_delta_version
+        self.env["additional_pkginfo"] = pkginfo
+        self.env["url"] = item["Location"]
+        self.output("Additional pkginfo: %s" % self.env["additional_pkginfo"])
+
+    def main(self):
+        """Get information about an update"""
+        if self.env["version"] not in SUPPORTED_VERSIONS:
+            raise ProcessorError(
+                "Invalid 'version': supported values are '%s'"
+                % "', '".join(SUPPORTED_VERSIONS)
+            )
+        product = self.env["product"]
+        if product in DEPRECATED_PRODUCTS:
+            self.show_deprecation(
+                "As of August 2026, Microsoft no longer publishes %s updates to "
+                "the Microsoft AutoUpdate feed. Office for Mac 2016 support ended "
+                "in October 2020 at version 16.16.27. Please use the MS%s recipes "
+                "instead." % (product, product.replace("2016", "2019"))
+            )
+            self.env["stop_processing_recipe"] = True
+            return
+        if product == "Edge":
+            self.get_edge_installer_info()
+            return
+        self.get_installer_info()
+
+
+if __name__ == "__main__":
+    PROCESSOR = MSOfficeMacURLandUpdateInfoProvider()
+    PROCESSOR.execute_shell()

@@ -29,13 +29,14 @@
         </dict>
     </dict>
     <key>MinimumVersion</key>
-    <string>0.2.0</string>
+    <string>0.3.0</string>
 	<key>ParentRecipe</key>
 	<string>com.github.autopkg.download.google-earth</string>
     <key>Process</key>
 	<array>
-        <!-- Make a fake pkg root -->
         <dict>
+            <key>Comment</key>
+            <string>Make a fake pkg root</string>
             <key>Arguments</key>
             <dict>
                 <key>pkgroot</key>
@@ -53,8 +54,9 @@
             <key>Processor</key>
             <string>PkgRootCreator</string>
         </dict>
-        <!-- Expand packages into fake root -->
         <dict>
+            <key>Comment</key>
+            <string>Expand packages into fake root</string>
             <key>Processor</key>
             <string>FlatPkgUnpacker</string>
             <key>Arguments</key>
@@ -62,7 +64,7 @@
                 <key>destination_path</key>
                 <string>%RECIPE_CACHE_DIR%/expanded</string>
                 <key>flat_pkg_path</key>
-                <string>%pathname%/Install Google Earth.pkg</string>
+                <string>%pathname%/Install Google Earth*.pkg</string>
             </dict>
         </dict>
         <dict>
@@ -73,28 +75,17 @@
                 <key>destination_path</key>
                 <string>%RECIPE_CACHE_DIR%/unpack/root/Applications</string>
                 <key>pkg_payload_path</key>
-                <string>%RECIPE_CACHE_DIR%/expanded/Google_Earth.pkg/Payload</string>
+                <string>%RECIPE_CACHE_DIR%/expanded/Google_Earth_Pro.pkg/Payload</string>
             </dict>
         </dict>
         <dict>
-            <key>Processor</key>
-            <string>PkgPayloadUnpacker</string>
-            <key>Arguments</key>
-            <dict>
-                <key>destination_path</key>
-                <string>%RECIPE_CACHE_DIR%/unpack/root/Library/Internet Plug-Ins</string>
-                <key>pkg_payload_path</key>
-                <string>%RECIPE_CACHE_DIR%/expanded/Google_Earth_Web_Plug-In.pkg/Payload</string>
-            </dict>
-        </dict>
-        <!-- Make and merge Munki installs items -->
-        <dict>
+            <key>Comment</key>
+            <string>Make and merge Munki installs items</string>
             <key>Arguments</key>
             <dict>
                 <key>installs_item_paths</key>
                 <array>
                     <string>/Applications/Google Earth.app</string>
-                    <string>/Library/Internet Plug-Ins/Google Earth Web Plug-in.plugin</string>
                 </array>
                 <key>faux_root</key>
                 <string>%RECIPE_CACHE_DIR%/unpack/root</string>
@@ -108,14 +99,15 @@
             <key>Processor</key>
             <string>MunkiPkginfoMerger</string>
         </dict>
-        <!-- Extract a version from Google Earth.app and merge pkginfo version key -->
         <dict>
+            <key>Comment</key>
+            <string>Extract a version from Google Earth.app and merge pkginfo version key</string>
             <key>Processor</key>
             <string>Versioner</string>
             <key>Arguments</key>
             <dict>
                 <key>input_plist_path</key>
-                <string>%RECIPE_CACHE_DIR%/unpack/root/Applications/Google Earth.app/Contents/Info.plist</string>
+                <string>%RECIPE_CACHE_DIR%/unpack/root/Applications/Google Earth Pro.app/Contents/Info.plist</string>
                 <key>plist_version_key</key>
                 <string>CFBundleVersion</string>
             </dict>

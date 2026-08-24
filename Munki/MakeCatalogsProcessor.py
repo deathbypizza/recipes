@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2013 Greg Neagle
 #
@@ -23,43 +23,48 @@ from autopkglib import Processor, ProcessorError, get_pref
 
 __all__ = ["MakeCatalogsProcessor"]
 
+
 class MakeCatalogsProcessor(Processor):
     """Runs makecatalogs on a munki repo"""
+
     input_variables = {
-        "munki_repo_path": {
-            "required": True,
-            "description": "Path to the munki repo.",
+        "MUNKI_REPO": {"required": True, "description": "Munki repo URL."},
+        "MUNKI_REPO_PLUGIN": {
+            "required": False,
+            "description": "Name of a Munki repo plugin. Defaults to FileRepo",
         },
         "force_rebuild": {
             "required": False,
-            "description":
-                "If not false or empty or undefined, force a makecatalogs run.",
+            "description": (
+                "If not false or empty or undefined, force a makecatalogs run."
+            ),
         },
     }
     output_variables = {
         "makecatalogs_resultcode": {
-            "description": "Result code from the makecatalogs operation.",
+            "description": "Result code from the makecatalogs operation."
         },
         "makecatalogs_stderr": {
-            "description": "Error output (if any) from makecatalogs.",
+            "description": "Error output (if any) from makecatalogs."
         },
     }
 
     description = __doc__
 
     def main(self):
-        '''Rebuild Munki catalogs in repo_path'''
+        """Rebuild Munki catalogs in repo_path"""
 
         cache_dir = get_pref("CACHE_DIR") or os.path.expanduser(
-            "~/Library/AutoPkg/Cache")
-        current_run_results_plist = os.path.join(
-            cache_dir, "autopkg_results.plist")
+            "~/Library/AutoPkg/Cache"
+        )
+        current_run_results_plist = os.path.join(cache_dir, "autopkg_results.plist")
         try:
-            run_results = plistlib.readPlist(current_run_results_plist)
-        except IOError:
+            with open(current_run_results_plist, "rb") as f:
+                run_results = plistlib.load(f)
+        except (IOError, OSError):
             run_results = []
 
-        something_imported = False
+        repo_changed = False
         # run_results is an array of autopackager.results,
         # which is itself an array.
         # look through all the results for evidence that
@@ -68,34 +73,43 @@ class MakeCatalogsProcessor(Processor):
         # but might be harder to grasp...
         for result in run_results:
             for item in result:
-                if item.get("Processor") == "MunkiImporter":
-                    if item["Output"].get("pkginfo_repo_path"):
-                        something_imported = True
-                        break
+                if "Output" in item and item["Output"].get("munki_repo_changed", False):
+                    repo_changed = True
+                    break
 
-        if not something_imported and not self.env.get("force_rebuild"):
+        if not repo_changed and not self.env.get("force_rebuild"):
             self.output("No need to rebuild catalogs.")
             self.env["makecatalogs_resultcode"] = 0
             self.env["makecatalogs_stderr"] = ""
         else:
             # Generate arguments for makecatalogs.
-            args = ["/usr/local/munki/makecatalogs",
-                    self.env["munki_repo_path"]]
+            args = ["/usr/local/munki/makecatalogs"]
+            if self.env["MUNKI_REPO"].startswith("/"):
+                # looks a file path instead of a URL
+                args.append(self.env["MUNKI_REPO"])
+            else:
+                args.extend(["--repo-url", self.env["MUNKI_REPO"]])
+
+            if self.env.get("MUNKI_REPO_PLUGIN"):
+                args.extend(["--plugin", self.env["MUNKI_REPO_PLUGIN"]])
 
             # Call makecatalogs.
             try:
                 proc = subprocess.Popen(
-                    args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                (_, err_out) = proc.communicate()
+                    args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                _, err_out = proc.communicate()
             except OSError as err:
                 raise ProcessorError(
                     "makecatalog execution failed with error code %d: %s"
-                    % (err.errno, err.strerror))
+                    % (err.errno, err.strerror)
+                )
 
             self.env["makecatalogs_resultcode"] = proc.returncode
-            self.env["makecatalogs_stderr"] = err_out
+            self.env["makecatalogs_stderr"] = err_out.decode("utf-8")
             if proc.returncode != 0:
-                raise ProcessorError("makecatalogs failed: %s" % err_out)
+                error_text = "makecatalogs failed: \n" + self.env["makecatalogs_stderr"]
+                raise ProcessorError(error_text)
             else:
                 self.output("Munki catalogs rebuilt!")
 
@@ -103,4 +117,3 @@ class MakeCatalogsProcessor(Processor):
 if __name__ == "__main__":
     PROCESSOR = MakeCatalogsProcessor()
     PROCESSOR.execute_shell()
-
